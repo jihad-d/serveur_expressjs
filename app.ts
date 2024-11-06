@@ -2,20 +2,42 @@ import express from 'express';
 import { Express, Request, Response, NextFunction } from 'express';
 import bodyParser from 'body-parser';
 import nodemailer from 'nodemailer';
+import fs from 'fs';
+import path from 'path';
 
 const app = express()
 const port = 3000
 
 app.use(bodyParser.json());
 
+
 interface Task {
   id: number;      
-  title: string;   
+  title: string;  
+  content: string;
 }
 
-//tableau pour stocker taches
-let tasks: Task[] = [];
-let taskId: number = 1;
+//fichier json qui contient les taches
+const tasksFilePath = path.join(__dirname, 'tasks.json');
+
+//fonction pour charger les tâches depuis le fichier JSON
+const loadTasks = () => {
+  try {
+    const data = fs.readFileSync(tasksFilePath, 'utf-8');
+    return JSON.parse(data) as Task[];
+  } catch (err) {
+    return []; // retourne tableau vide si 0 fichiers ou erreur
+  }
+};
+
+//sauvegarde taches dans le fichier JSON
+const saveTasks = (tasks: Task[]) => {
+  fs.writeFileSync(tasksFilePath, JSON.stringify(tasks, null, 2), 'utf-8'); 
+};
+
+let tasks = loadTasks(); //recup toutes les taches
+let taskId = tasks.length ? tasks[tasks.length - 1].id + 1 : 1; // si le tableau a des taches ajt 1 sinon commencer à 0
+
 
 //transporteur ; sert de connexion entre serveur et "boite mail"
 const transporter = nodemailer.createTransport({
@@ -47,40 +69,118 @@ app.get('/', (req: Request, res: Response) => {
 })
 
 
-app.post('/newtasks', async(req:  Request<never, never, { title: string; }, never>, res: Response) => {
-  const { title } = req.body; 
-  // const title = req.body.title;
+app.post('/newtasks', async (req, res) => {
+  const { title, content } = req.body;
 
-  //si titre absent alors renvoyer erreur
   if (!title) {
     res.status(400).json({ error: 'Task title is required' });
+    return; //si manque titre la requete s'arrete
   }
 
-  //creation nvl task
   const newTask: Task = {
     id: taskId++,
-    title: title, 
+    title: title,
+    content: content || '',
   };
 
-  tasks.push(newTask); //push ; ajt note au tableau
+  tasks.push(newTask);
+  // saveTasks(tasks);
 
-  //envoi notif mail
+  // Envoi de la notification par mail
   await transporter.sendMail({
     from: '"Jaylan 👻" <jaylan.becker@ethereal.email>',
     to: "jaylan.becker@ethereal.email",
     subject: "New Task Created",
-    text: `A new task "${newTask.title}"`,
+    text: `A new task "${newTask.title}" and new content "${newTask.content}"`,
   });
 
-  res.status(201).json(newTask); 
+  res.status(201).json(newTask);
 });
 
 
-app.get('/listtasks', (req: Request, res: Response) => {
+app.get('/listtasks', async (req: Request, res: Response) => {
+  const tasksList = tasks.map(task => `Task ID: ${task.id}\nTitle: ${task.title}\nContent: ${task.content}\n`).join('\n\n'); //rassemble les chaines de caract + saut à la ligne     map ; creer un tableau
+
+  await transporter.sendMail({
+    from: '"Jaylan 👻" <jaylan.becker@ethereal.email>',
+    to: "jaylan.becker@ethereal.email",
+    subject: "Task List",
+    text: `Liste ${new Date().toISOString()}.\n\nTaches:\n\n${tasksList}`,
+    html: `<b>Liste${new Date().toISOString()}.</b><br><p>Taches:</p><pre>${tasksList}</pre>`,
+  });
+
   res.json(tasks); 
 });
+
+
+app.put('/update/:id', async (req: Request, res: Response) => {
+  try {
+    const taskId = parseInt(req.params.id);
+    const { title, content } = req.body;
+
+    const taskIndex = tasks.findIndex(task => task.id === taskId); 
+
+    // Si la tâche n'est pas trouvée, renvoyer une erreur et arrêter l'exécution
+    if (taskIndex === -1) {
+      res.status(404).json({ error: 'Task not found' });
+    }
+
+    // Mise à jour de la tâche
+    tasks[taskIndex].title = title || tasks[taskIndex].title;
+    tasks[taskIndex].content = content || tasks[taskIndex].content;
+
+    // Sauvegarde dans le JSON
+    saveTasks(tasks);
+
+    // Envoi d'un email
+    await transporter.sendMail({
+      from: '"Jaylan 👻" <jaylan.becker@ethereal.email>',
+      to: "jaylan.becker@ethereal.email",
+      subject: "Task Updated",
+      text: `The task with ID ${taskId} has been updated.\nNew Title: ${tasks[taskIndex].title}\nNew Content: ${tasks[taskIndex].content}`,
+    });
+
+    // Réponse avec la tâche mise à jour
+    res.status(200).json(tasks[taskIndex]); 
+  } catch (error) {
+    console.error(error);
+    res.status(404).json({ error: 'Error updating task' });
+  }
+});
+
+
+
+
+
+app.delete('/delete/:id', async (req: Request, res: Response) => {
+  console.log("Delete route reached"); 
+  try {
+    const taskId = parseInt(req.params.id); //recup l'id de la tâche à sup
+    const taskIndex = tasks.findIndex(task => task.id === taskId); //trouve l'index de la tache à sup
+
+    //supp la tache du tableau
+    const deletedTask = tasks.splice(taskIndex, 1)[0]; // "splice" modifie le tableau et renvoie les éléments supprimés
+
+    saveTasks(tasks);
+
+    await transporter.sendMail({
+      from: '"Jaylan 👻" <jaylan.becker@ethereal.email>',
+      to: "jaylan.becker@ethereal.email",
+      subject: "Task Deleted",
+      text: `The task with ID ${taskId} has been deleted.`,
+    });
+
+    res.status(200).json({ message: `Task with ID ${taskId} deleted successfully`, deletedTask });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error occurred during task deletion' });
+  }
+});
+
 
 
 app.listen(port, () => {
   console.log(`App listening on port ${port}`)
 })  
+
+export default app; 
