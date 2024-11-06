@@ -6,8 +6,8 @@
   },
   {
     "id": 3,
-    "title": "Basket et foot et plus rugby",
-    "content": "entre camarade"
+    "title": "Updated Title",
+    "content": "Updated Content"
   },
   {
     "id": 4,
@@ -38,25 +38,5 @@
     "id": 10,
     "title": "divorce",
     "content": "divorce"
-  },
-  {
-    "id": 11,
-    "title": "Test Task",
-    "content": "This is a test task"
-  },
-  {
-    "id": 12,
-    "title": "Test Task",
-    "content": "This is a test task"
-  },
-  {
-    "id": 13,
-    "title": "naissance",
-    "content": "fille ou garçon"
-  },
-  {
-    "id": 14,
-    "title": "naissance",
-    "content": "bleu ou rose"
   }
 ]
