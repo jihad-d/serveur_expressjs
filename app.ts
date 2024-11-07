@@ -86,7 +86,6 @@ app.post('/newtasks', async (req, res) => {
   tasks.push(newTask);
   // saveTasks(tasks);
 
-  // Envoi de la notification par mail
   await transporter.sendMail({
     from: '"Jaylan 👻" <jaylan.becker@ethereal.email>',
     to: "jaylan.becker@ethereal.email",
@@ -120,19 +119,17 @@ app.put('/update/:id', async (req: Request, res: Response) => {
 
     const taskIndex = tasks.findIndex(task => task.id === taskId); 
 
-    // Si la tâche n'est pas trouvée, renvoyer une erreur et arrêter l'exécution
+    //si la tache n'est pas trouvee alors renvoyer erreur et stoper l'execution
     if (taskIndex === -1) {
       res.status(404).json({ error: 'Task not found' });
     }
 
-    // Mise à jour de la tâche
+    //maj de la tache
     tasks[taskIndex].title = title || tasks[taskIndex].title;
     tasks[taskIndex].content = content || tasks[taskIndex].content;
 
-    // Sauvegarde dans le JSON
     saveTasks(tasks);
 
-    // Envoi d'un email
     await transporter.sendMail({
       from: '"Jaylan 👻" <jaylan.becker@ethereal.email>',
       to: "jaylan.becker@ethereal.email",
@@ -140,7 +137,6 @@ app.put('/update/:id', async (req: Request, res: Response) => {
       text: `The task with ID ${taskId} has been updated.\nNew Title: ${tasks[taskIndex].title}\nNew Content: ${tasks[taskIndex].content}`,
     });
 
-    // Réponse avec la tâche mise à jour
     res.status(200).json(tasks[taskIndex]); 
   } catch (error) {
     console.error(error);
@@ -151,17 +147,20 @@ app.put('/update/:id', async (req: Request, res: Response) => {
 
 
 
-
 app.delete('/delete/:id', async (req: Request, res: Response) => {
-  console.log("Delete route reached"); 
+  console.log("Delete route reached");
   try {
-    const taskId = parseInt(req.params.id); //recup l'id de la tâche à sup
-    const taskIndex = tasks.findIndex(task => task.id === taskId); //trouve l'index de la tache à sup
+    const taskId = parseInt(req.params.id);
+    const taskIndex = tasks.findIndex(task => task.id === taskId);
 
-    //supp la tache du tableau
-    const deletedTask = tasks.splice(taskIndex, 1)[0]; // "splice" modifie le tableau et renvoie les éléments supprimés
+    if (taskIndex === -1) {
+      res.status(404).json({ error: 'Task not found' });  //si la tache n'existe pas
+    }
 
-    saveTasks(tasks);
+    //suppression de la tache du tableau
+    const deletedTask = tasks.splice(taskIndex, 1)[0];  // splice supprime et retourne la tache
+
+    saveTasks(tasks); 
 
     await transporter.sendMail({
       from: '"Jaylan 👻" <jaylan.becker@ethereal.email>',

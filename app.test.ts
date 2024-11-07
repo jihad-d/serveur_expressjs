@@ -3,14 +3,10 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import fs from 'fs';
 import path from 'path';
-import app from './app';  
+import app from './app';   
+import nodemailer from 'nodemailer'; 
 
 
-jest.mock('nodemailer', () => ({
-  createTransport: jest.fn().mockReturnValue({
-    sendMail: jest.fn().mockResolvedValue('email sent'),
-  }),
-}));
 
 describe('POST /newtasks', () => {
   it('create a new task', async () => {
@@ -33,6 +29,51 @@ describe('POST /newtasks', () => {
   });
 });
 
+
+
+// config du mock nodemailer
+jest.mock('nodemailer', () => {
+  const sendMailMock = jest.fn().mockResolvedValue('Email sent successfully');
+  return {
+    createTransport: jest.fn().mockReturnValue({
+      sendMail: sendMailMock,
+    }),
+    __sendMailMock__: sendMailMock,
+  };
+});
+
+//extraire mock pour l'utiliser dans les tests
+const { __sendMailMock__: sendMailMock } = require('nodemailer');
+
+describe('POST /newtasks', () => {
+  beforeEach(() => {
+    sendMailMock.mockClear();
+  });
+
+  it('send email for newtask', async () => {
+    const response = await request(app)
+      .post('/newtasks')
+      .send({ title: 'Test Task', content: 'Test content for the task' });
+
+    expect(response.status).toBe(201);
+    expect(response.body.title).toBe('Test Task');
+    expect(response.body.content).toBe('Test content for the task');
+
+    // verifie que `sendMail` a ete appele avec les bons params
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    expect(sendMailMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: expect.any(String),
+        to: expect.any(String),
+        subject: 'New Task Created',
+        text: expect.stringContaining('Test Task'),
+      })
+    );
+  });
+});
+
+
+
 describe('GET /listtasks', () => {
   it('tasks list', async () => {
     const response = await request(app)
@@ -52,11 +93,11 @@ describe('GET /listtasks', () => {
 
 
 
-let tasks = [{ id: 1, title: 'Old Title', content: 'Old Content' }]; // Liste de tâches simulée
+let tasks = [{ id: 1, title: 'Old Title', content: 'Old Content' }]; //liste tache simulee
 
 const tasksFilePath = path.join(__dirname, 'tasks.json');
 
-// Fonction utilitaire pour préparer le fichier JSON
+//fonction pour preparer le JSON
 const resetTasksFile = (tasks: Array<{ id: number; title: string; content: string }>) => {
   fs.writeFileSync(tasksFilePath, JSON.stringify(tasks, null, 2), 'utf-8');
 };
@@ -64,14 +105,14 @@ const resetTasksFile = (tasks: Array<{ id: number; title: string; content: strin
 describe('PUT /update/:id', () => {
   beforeEach(() => {
     const initialTasks = [{ id: 1, title: 'Old Title', content: 'Old Content' }];
-    resetTasksFile(initialTasks);  // Réinitialiser les tâches avant chaque test
+    resetTasksFile(initialTasks);  // reinitialise les taches avant chaque test
   });
 
   it('should update task and return updated task', async () => {
     const updatedTask = { title: 'Updated Title', content: 'Updated Content' };
 
     const response = await request(app)
-      .put('/update/3')  // Corrigé: Assurez-vous que l'ID de la tâche existe
+      .put('/update/3') 
       .send(updatedTask);
 
     expect(response.status).toBe(200);
@@ -82,16 +123,16 @@ describe('PUT /update/:id', () => {
   it('should update task in the JSON file', () => {
     const updatedTask = { title: 'Updated Title', content: 'Updated Content' };
 
-    // Effectuer la requête PUT pour mettre à jour la tâche
+    //execute la requete PUT pour maj la tache
     request(app)
       .put('/update/1')
       .send(updatedTask)
       .end(() => {
-        // Lire le fichier après la mise à jour
+        //lire le fichier json apres maj
         const tasksInFile = JSON.parse(fs.readFileSync(tasksFilePath, 'utf-8'));
         const updatedTaskInFile = tasksInFile.find((task: { id: number }) => task.id === 1);
 
-        // Vérifier que la tâche est mise à jour dans le fichier
+        //verifie que la tache soit maj
         expect(updatedTaskInFile).toBeTruthy();
         expect(updatedTaskInFile?.title).toBe('Updated Title');
         expect(updatedTaskInFile?.content).toBe('Updated Content');
@@ -100,38 +141,35 @@ describe('PUT /update/:id', () => {
 });
 
 
-
 describe('DELETE /delete/:id', () => {
-  beforeEach(() => {
-    const initialTasks = [
-      { id: 1, title: 'Task 1', content: 'Content Task 1' },
-      { id: 2, title: 'Task 2', content: 'Content Task 2' },
-    ];
-    resetTasksFile(initialTasks);  // Réinitialiser les tâches avant chaque test
+    it('delete a task', async () => {
+      //cree fausse tache pour tester la supp
+      const taskId = 1;
+      tasks.push({ id: taskId, title: 'Test Task', content: 'This is a test task' });
+  
+      const response = await request(app)
+        .delete(`/delete/${taskId}`)
+        .expect(200);
+  
+      //verifie la reponse
+      expect(response.body.message).toBe(`Task with ID ${taskId} deleted successfully`);
+      expect(response.body.deletedTask).toEqual({ id: taskId, name: 'Test Task' });
+  
+      //verifie que la tache a ete supp
+      const taskExists = tasks.some(task => task.id === taskId);
+      expect(taskExists).toBe(false);
+    });
+  
+    it('return a 404 if the task is not found', async () => {
+      const response = await request(app)
+        .delete('/delete/999')
+        .expect(404);
+  
+      expect(response.body.error).toBe('Task not found');
+    });
   });
 
-  it('delete task + success message', async () => {
-    const taskIdToDelete = 1;
+  
 
-    const response = await request(app)
-      .delete(`/delete/${taskIdToDelete}`);
-
-    expect(response.status).toBe(200);
-    expect(response.body.message).toBe(`Task with ID ${taskIdToDelete} deleted successfully`);
-
-    const tasks = JSON.parse(fs.readFileSync(tasksFilePath, 'utf-8'));
-    const deletedTask = tasks.find((task: { id: number }) => task.id === taskIdToDelete);
-    expect(deletedTask).toBeUndefined();  // La tâche doit être supprimée
-  });
-
-  it('return 404 if task not found', async () => {
-    const invalidTaskId = 999;
-
-    const response = await request(app)
-      .delete(`/delete/${invalidTaskId}`);
-
-    expect(response.status).toBe(404);
-    expect(response.body.error).toBe('Task not found');
-  });
-});
-
+//monsieur je comprend pas mes tests pour la suppression fonctionnent pas pourtant sur postman mes tâches se suppriment, j'ai donné mon âme pour ce test mais qui sait peut-être qu'il voulait ma mère aussi 
+//en plus il refuse toujours mes "return" dans mon app.ts 
